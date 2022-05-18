@@ -1,0 +1,1 @@
+`bevy_tiling_core` contains the core data structures for storing and using tilemaps. Tiles are stored in a linear array, and chunked in 256 tile runs.
