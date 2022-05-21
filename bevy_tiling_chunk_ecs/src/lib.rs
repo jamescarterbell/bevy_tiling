@@ -1,6 +1,6 @@
 use bevy::{
     math::IVec3,
-    prelude::{Commands, Component, Entity, Plugin, Query, ResMut, With},
+    prelude::{Commands, Component, Entity, Plugin, ResMut},
     utils::HashMap,
 };
 use bevy_tiling_core::{MapReader, TileMapReader, TilingCoreStage};
