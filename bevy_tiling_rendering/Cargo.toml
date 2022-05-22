@@ -1,0 +1,11 @@
+[package]
+name = "bevy_tiling_rendering"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bevy_tiling_core = {path = "../bevy_tiling_core"}
+bevy_tiling_chunk_ecs = {path = "../bevy_tiling_chunk_ecs"}
+bevy = {version = "0.7.0", default-features = false, features = ["render"]}

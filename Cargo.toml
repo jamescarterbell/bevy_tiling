@@ -12,4 +12,5 @@ bevy = {version = "0.7.0", default-features = false}
 members = [
     "bevy_tiling_core",
     "bevy_tiling_chunk_ecs",
+    "bevy_tiling_rendering",
 ]

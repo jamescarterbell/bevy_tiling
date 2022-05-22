@@ -1,13 +1,13 @@
 use bevy::{
     math::IVec3,
-    prelude::{Commands, Component, Entity, Plugin, ResMut},
+    prelude::{Commands, Component, Entity, Plugin, ResMut, Transform},
     utils::HashMap,
 };
 use bevy_tiling_core::{MapReader, TileMapReader, TilingCoreStage};
 
-pub struct BevyTilingChunkEcs;
+pub struct TilingChunkEcsPlugin;
 
-impl Plugin for BevyTilingChunkEcs {
+impl Plugin for TilingChunkEcsPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.init_resource::<ChunkMap>()
             .add_system_to_stage(TilingCoreStage::Update, update_chunk_map);
@@ -16,12 +16,20 @@ impl Plugin for BevyTilingChunkEcs {
 
 fn update_chunk_map(
     mut commands: Commands,
-    tile_map_reader: TileMapReader,
+    tilemap_reader: TileMapReader,
     mut chunk_map: ResMut<ChunkMap>,
 ) {
-    for chunk_update in tile_map_reader.get_chunk_updates() {
+    for chunk_update in tilemap_reader.get_chunk_updates() {
         if chunk_map.get_chunk_entity(chunk_update).is_none() {
-            chunk_map.insert_chunk(chunk_update, &commands.spawn_bundle((ChunkMarker,)).id());
+            chunk_map.insert_chunk(
+                chunk_update,
+                &commands
+                    .spawn_bundle((
+                        ChunkMarker,
+                        Transform::from_translation(chunk_update.as_vec3() * 16.0),
+                    ))
+                    .id(),
+            );
         }
     }
 }

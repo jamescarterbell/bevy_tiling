@@ -1,3 +1,5 @@
+use std::{mem::size_of, slice::from_raw_parts};
+
 use bevy::{
     ecs::system::SystemParam,
     math::IVec3,
@@ -5,9 +7,9 @@ use bevy::{
     utils::{hashbrown::hash_map::Keys, HashMap, HashSet},
 };
 
-pub struct TilingPlugin;
+pub struct TilingCorePlugin;
 
-impl Plugin for TilingPlugin {
+impl Plugin for TilingCorePlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
         app.init_resource::<TileMap>()
             .init_resource::<TileMapUpdates>()
@@ -42,10 +44,28 @@ pub struct Tile {
     index: u16,
 }
 
+impl Tile {
+    /// Create a new [`Tile`] from raw chunk and index info.
+    /// # Notes
+    /// Recommended for internal and library use only.
+    pub fn new(sheet: u16, index: u16) -> Self {
+        Self { sheet, index }
+    }
+}
+
 #[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub struct TileCoord {
     index: u8,
     chunk: IVec3,
+}
+
+impl TileCoord {
+    /// Create a new [`TileCoord`] from raw chunk and index info.
+    /// # Notes
+    /// Recommended for internal and library use only.
+    pub fn new(chunk: IVec3, index: u8) -> Self {
+        Self { chunk, index }
+    }
 }
 
 pub struct Chunk {
@@ -63,6 +83,7 @@ impl Default for Chunk {
 }
 
 impl Chunk {
+    #[inline]
     pub fn get_tile(&self, coord: u8) -> Option<&Tile> {
         if self.valid[coord as usize] {
             return Some(&self.tiles[coord as usize]);
@@ -70,6 +91,7 @@ impl Chunk {
         None
     }
 
+    #[inline]
     pub fn get_tile_mut(&mut self, coord: u8) -> Option<&mut Tile> {
         if self.valid[coord as usize] {
             return Some(&mut self.tiles[coord as usize]);
@@ -77,6 +99,7 @@ impl Chunk {
         None
     }
 
+    #[inline]
     pub fn set_tile(&mut self, coord: u8, tile: Option<Tile>) -> Option<Tile> {
         let mut res = None;
         if self.valid[coord as usize] {
@@ -90,6 +113,15 @@ impl Chunk {
             None => self.valid[coord as usize] = false,
         };
         res
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            from_raw_parts(
+                self.tiles.as_ptr() as *const u8,
+                size_of::<Tile>() * 256 + size_of::<bool>() * 256,
+            )
+        }
     }
 }
 
@@ -166,6 +198,8 @@ pub trait MapReader {
     fn get_chunk(&self, coord: &IVec3) -> Option<&Chunk>;
 
     fn get_chunk_updates(&self) -> Keys<IVec3, HashSet<u8>>;
+
+    fn is_chunk_updated(&self, coord: &IVec3) -> bool;
 }
 
 impl<'w, 's> MapReader for TileMapReader<'w, 's> {
@@ -186,6 +220,11 @@ impl<'w, 's> MapReader for TileMapReader<'w, 's> {
     fn get_chunk_updates(&self) -> Keys<IVec3, HashSet<u8>> {
         self.updates.get_chunk_updates()
     }
+
+    #[inline]
+    fn is_chunk_updated(&self, coord: &IVec3) -> bool {
+        self.updates.chunks.contains_key(coord)
+    }
 }
 
 impl<'w, 's> MapReader for TileMapWriter<'w, 's> {
@@ -205,6 +244,11 @@ impl<'w, 's> MapReader for TileMapWriter<'w, 's> {
     #[inline]
     fn get_chunk_updates(&self) -> Keys<IVec3, HashSet<u8>> {
         self.updates.get_chunk_updates()
+    }
+
+    #[inline]
+    fn is_chunk_updated(&self, coord: &IVec3) -> bool {
+        self.updates.chunks.contains_key(coord)
     }
 }
 
@@ -242,6 +286,14 @@ impl<'w, 's> TileMapWriter<'w, 's> {
         self.chunks.get_chunk_mut(coord)
     }
 
+    /// Manually mark a chunk as updated, without actually changing values in the chunk.
+    #[inline]
+    pub fn mark_chunk_updated(&mut self, coord: &IVec3) {
+        if !self.is_chunk_updated(coord) {
+            self.updates.chunks.insert(*coord, HashSet::default());
+        }
+    }
+
     /// Get mutable access to a tile from a shared reference.
     /// # Safety
     /// This function breaks basic borrowing rules, it should be used not at all or very carefully.
@@ -260,5 +312,25 @@ impl<'w, 's> TileMapWriter<'w, 's> {
     pub unsafe fn get_chunk_mut_unchecked(&self, coord: &IVec3) -> Option<&mut Chunk> {
         self.get_chunk(coord)
             .map(|chunk| unsafe { (chunk as *const Chunk as *mut Chunk).as_mut().unwrap() })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use core::mem::size_of;
+
+    use crate::{Chunk, Tile};
+
+    #[test]
+    fn chunk_layout() {
+        assert_eq!(
+            size_of::<Chunk>(),
+            size_of::<Tile>() * 256 + size_of::<bool>() * 256
+        );
+        let chunk = Chunk::default();
+        let tiles = &chunk.tiles[..];
+        let valid = &chunk.valid[..];
+        let tiles_end = tiles.as_ptr().wrapping_add(tiles.len()) as *const u8;
+        assert_eq!(tiles_end, valid.as_ptr() as *const u8);
     }
 }
