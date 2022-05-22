@@ -1,6 +1,6 @@
 use bevy::{
     math::IVec3,
-    prelude::{Commands, Component, Entity, Plugin, Query, Res, ResMut, Transform, With},
+    prelude::{Commands, Component, Entity, Plugin, Query, Res, ResMut, Transform, With, Without},
     render::{
         render_resource::{Buffer, BufferDescriptor, BufferInitDescriptor, BufferUsages},
         renderer::RenderDevice,
@@ -8,12 +8,13 @@ use bevy::{
     },
 };
 use bevy_tiling_chunk_ecs::{ChunkMap, ChunkMarker};
-use bevy_tiling_core::{MapReader, TileMapWriter};
+use bevy_tiling_core::{MapReader, TileMapWriter, TilingCoreStage};
 
 pub struct TilingRenderPlugin;
 
 impl Plugin for TilingRenderPlugin {
     fn build(&self, app: &mut bevy::prelude::App) {
+        app.add_system_to_stage(TilingCoreStage::Update, add_render_entitites);
         let render_app = app.sub_app_mut(RenderApp);
         render_app.add_system_to_stage(RenderStage::Extract, extract);
     }
@@ -33,12 +34,21 @@ pub enum TilingBuffer {
 #[derive(Component)]
 /// Placed on gameplay world components to point towards
 /// rendering world components.
-struct RenderEntity(Option<Entity>);
+pub struct RenderEntity(Option<Entity>);
 
 #[derive(Component)]
 /// Placed on rendering world components to point
 /// towards gameplay world chunks.
-struct RenderKey(IVec3);
+pub struct RenderKey(IVec3);
+
+fn add_render_entitites(
+    mut commands: Commands,
+    chunks: Query<Entity, (With<ChunkMarker>, Without<RenderEntity>)>,
+) {
+    for chunk in chunks.iter() {
+        commands.entity(chunk).insert(RenderEntity(None));
+    }
+}
 
 fn extract(
     mut commands: Commands,
@@ -53,6 +63,7 @@ fn extract(
         .expect("Couldn't find RenderDevice");
 
     let mut rendering_entity_query = render_world.query::<(Entity, &TilingBuffer, &RenderKey)>();
+
     for (entity, buffer, key) in rendering_entity_query.iter(&render_world) {
         // Make sure this chunk still exists
         if tilemap_writer.get_chunk(&key.0).is_some() {
@@ -64,9 +75,6 @@ fn extract(
                     tilemap_writer.mark_chunk_updated(&key.0);
                 }
             }
-        } else {
-            // Remove nonexistent chunk
-            commands.entity(entity).despawn();
         }
     }
 
@@ -78,22 +86,20 @@ fn extract(
         if tilemap_writer.is_chunk_updated(chunk_key) {
             let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
                 label: Some("raw_tile_buffer"),
-                usage: BufferUsages::MAP_READ & BufferUsages::MAP_WRITE,
+                usage: BufferUsages::MAP_READ | BufferUsages::MAP_WRITE,
                 contents: tilemap_writer
                     .get_chunk(chunk_key)
                     .expect("Couldn't find chunk!")
                     .as_bytes(),
             });
 
-            let new_ent = commands.spawn().insert(TilingBuffer::Unmeshed(buffer)).id();
-            if let Some(old_ent) = render_ent.0.replace(new_ent) {
-                commands.entity(old_ent).despawn();
-            }
+            commands
+                .entity(ent)
+                .insert(TilingBuffer::Unmeshed(buffer))
+                .insert(RenderKey(*chunk_key));
         }
-        // Update the render entities position
-        if let Some(render_ent) = render_ent.0 {
-            commands.entity(render_ent).insert(*transform);
-        }
+
+        commands.entity(ent).insert(*transform);
     }
 
     // Reinsert the render device
